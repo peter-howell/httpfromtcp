@@ -1,4 +1,4 @@
-module my.http
+module github.com/peter-howell/httpfromtcp
 
 go 1.25.3
 

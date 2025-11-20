@@ -3,9 +3,12 @@ package request
 
 import (
 	"bytes"
-	"io"
 	"fmt"
+	"io"
 	"regexp"
+	"strconv"
+
+	"github.com/peter-howell/httpfromtcp/internal/headers"
 )
 
 type RequestLine struct {
@@ -15,23 +18,34 @@ type RequestLine struct {
 }
 
 func (r *RequestLine) String() string {
-	return fmt.Sprintf("%s %s %s", r.Method, r.RequestTarget, r.HttpVersion)
+	return fmt.Sprintf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s", r.Method, r.RequestTarget, r.HttpVersion)
 }
 
 type parserState string
 const (
 	StateInit parserState = "init"
+	StateParseHeaders parserState = "parsingHeaders"
+	StateParseBody parserState = "parsingBody"
 	StateDone parserState = "done"
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers headers.Headers
+	Body []byte
+
 	state parserState
+}
+
+func (r* Request) String() string {
+	return fmt.Sprintf("%s\n%s\nBody:\n%s", &r.RequestLine, r.Headers, r.Body)
 }
 
 func newRequest() *Request {
 	return &Request{
 		state: StateInit,
+		Headers: headers.NewHeaders(),
+		Body: make([]byte, 0),
 	}
 }
 
@@ -81,9 +95,12 @@ func parseRequestLine(rawReq []byte) (*RequestLine, int, error) {
 
 func (r *Request) parse(data []byte) (int, error) {
 	read := 0
-	fmt.Printf("%s\n", string(data))
+	// fmt.Printf("%s\n", string(data))
 outer:
 	for {
+		if len(data) == 0 {
+			break outer
+		}
 		switch r.state {
 		case StateInit:
 			rl, n, err := parseRequestLine(data[read:])
@@ -95,9 +112,49 @@ outer:
 			}
 			r.RequestLine = *rl
 			read += n
-			r.state = StateDone
+			r.state = StateParseHeaders
+		case StateParseHeaders:
+			n, done, err := r.Headers.Parse(data[read:])
+			if err != nil {
+				return 0, err
+			}
+			if n == 0 {
+				break outer
+			}
+			read += n
+			if done {
+				r.state = StateParseBody
+			}
+		case StateParseBody:
+			expecLenS, ok := r.Headers.Get("content-length")
+			if !ok {
+				r.state = StateDone
+				break outer
+			}
+			expecLen, err := strconv.Atoi(expecLenS)
+			if err != nil {
+				return 0, fmt.Errorf("unknown content-length value: %v", expecLenS)
+			}
+			if expecLen == 0 {
+				r.state = StateDone
+				break outer
+			}
+
+			r.Body = append(r.Body, data[read:]...)
+
+			read += len(data[read:])
+			if len(r.Body) > expecLen {
+				return 0, fmt.Errorf("too many bytes in body")
+			}
+
+			if len(r.Body) == expecLen {
+				r.state = StateDone
+			}
+			return read, nil
 		case StateDone:
 			break outer
+		default:
+			panic("uh oh")
 		}
 	}
 	return read, nil
@@ -108,12 +165,19 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, 1024)
 	bufLen := 0
 	for !req.done() {
+		if bufLen >= len(buf) {
+			newBuf := make([]byte, 2*len(buf))
+			copy(newBuf, buf)
+			buf = newBuf
+
+		}
 		nRead, err := reader.Read(buf[bufLen:])
 		//todo what to do with errors?
 		if err != nil {
 			return nil, err
 		}
 		bufLen += nRead
+		fmt.Printf("buff: %s\n", buf[:bufLen])
 		nParsed, err := req.parse(buf[:bufLen])
 		if err != nil {
 			return nil, err
