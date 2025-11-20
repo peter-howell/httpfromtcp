@@ -48,6 +48,8 @@ func (h Headers) Get(key string) (string, bool) {
 	return val, ok
 }
 
+
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	//allLetter := regexp.MustCompile(`^[a-zA-Z]+$`).MatchString
@@ -93,6 +95,10 @@ func (h Headers) Set(key, val string) {
 	} else {
 		h[key] = val
 	}
+}
+
+func (h Headers) Replace(key, val string) {
+	h[key] = val
 }
 
 func validTokens(data []byte) bool {

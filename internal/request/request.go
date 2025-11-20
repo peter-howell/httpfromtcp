@@ -177,7 +177,6 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, err
 		}
 		bufLen += nRead
-		fmt.Printf("buff: %s\n", buf[:bufLen])
 		nParsed, err := req.parse(buf[:bufLen])
 		if err != nil {
 			return nil, err
