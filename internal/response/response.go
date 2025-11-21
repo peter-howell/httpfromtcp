@@ -82,6 +82,7 @@ func NewWriter(conn io.Writer) *Writer {
 
 func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	if w.wState != wStateStatusLine  {
+		fmt.Printf("current state is %v, but it should be %v", w.wState, wStateStatusLine)
 		return fmt.Errorf("status line is not needed based on current state")
 	}
 	defer func() {w.wState = wStateHeaders}()
@@ -106,12 +107,32 @@ func (w *Writer) WriteBody(p []byte) (int, error) {
 }
 
 func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.wState != wStateBody {
+		return 0, fmt.Errorf("body isn't needed based on current state")
+	}
 
-	return 0, nil
+	nTotal := 0
+	chunkLen := len(p) // number of bytes in p
+
+	if chunkLen <= 0 {
+		return 0, nil
+	}
+
+	n, err := fmt.Fprintf(w.writer, "%X\r\n", chunkLen)
+	nTotal += n
+
+	if err != nil {
+		return nTotal, err
+	}
+
+	toWrite := fmt.Appendf(p, "\r\n")
+
+	n, err = w.writer.Write(toWrite)
+
+	return nTotal + n, err
 }
 
 func (w *Writer) WriteChunkedBodyDone() (int, error) {
-
-	return 0, nil
+	return w.writer.Write([]byte("0\r\n\r\n"))
 }
 
