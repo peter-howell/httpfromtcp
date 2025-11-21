@@ -9,17 +9,16 @@ import (
 )
 
 
-type WriterState string 
+type writerState int 
 const (
-	StateNeedStatus WriterState = "need status line"
-	StateNeedHeaders WriterState = "need headers"
-	StateNeedBody WriterState = "need body"
-	StateDone WriterState = "done"
+	wStateStatusLine writerState = iota
+	wStateHeaders
+	wStateBody
 )
 
 type Writer struct {
-	State WriterState
-	Conn io.Writer
+	wState writerState
+	writer io.Writer
 }
 
 type StatusCode int
@@ -73,52 +72,37 @@ func WriteHeaders(w io.Writer, headers headers.Headers) error {
 }
 
 
-func (ws WriterState) Next() WriterState{
-	switch ws {
-	case StateNeedStatus:
-		return StateNeedHeaders
-	case StateNeedHeaders:
-		return StateNeedBody
-	default:
-		return ws
-	}
-}
 
 func NewWriter(conn io.Writer) *Writer {
 	return &Writer{
-		State: StateNeedStatus,
-		Conn: conn,
+		wState: wStateStatusLine,
+		writer: conn,
 	}
-}
-
-func (w *Writer) Advance() {
-	w.State = w.State.Next()
 }
 
 func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
-	if w.State != StateNeedStatus  {
+	if w.wState != wStateStatusLine  {
 		return fmt.Errorf("status line is not needed based on current state")
 	}
-	w.Advance()
-	err := WriteStatusLine(w.Conn, statusCode)
+	defer func() {w.wState = wStateHeaders}()
+	err := WriteStatusLine(w.writer, statusCode)
 
 	return err
 }
 
 func (w *Writer) WriteHeaders(headers headers.Headers) error {
-	if w.State != StateNeedHeaders {
+	if w.wState != wStateHeaders {
 		return fmt.Errorf("headers aren't needed based on current state")
 	}
-	w.Advance()
-	return WriteHeaders(w.Conn, headers)
+	defer func() {w.wState = wStateBody}()
+	return WriteHeaders(w.writer, headers)
 }
 
 func (w *Writer) WriteBody(p []byte) (int, error) {
-	if w.State != StateNeedBody {
+	if w.wState != wStateBody {
 		return 0, fmt.Errorf("body isn't needed based on current state")
 	}
-	w.Advance()
-	return w.Conn.Write(p)
+	return w.writer.Write(p)
 }
 
 func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
