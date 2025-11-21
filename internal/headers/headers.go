@@ -31,7 +31,9 @@ func (h Headers) Write(w io.Writer) error {
 			return err
 		}
 	}
-	return nil
+	_, err := fmt.Fprintf(w, "\r\n")
+
+	return err
 }
 
 
@@ -89,6 +91,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 }
 
 func (h Headers) Set(key, val string) {
+	key = strings.ToLower(key)
 	oldVal, ok := h[key]
 	if ok {
 		h[key] = fmt.Sprintf("%s, %s", oldVal, val)
@@ -98,7 +101,7 @@ func (h Headers) Set(key, val string) {
 }
 
 func (h Headers) Replace(key, val string) {
-	h[key] = val
+	h[strings.ToLower(key)] = val
 }
 
 func validTokens(data []byte) bool {
