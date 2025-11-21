@@ -2,7 +2,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -24,8 +23,7 @@ type HandlerError struct {
 	Msg string
 }
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
-
+type Handler func(w *response.Writer, req *request.Request)
 
 func (s *Server) handle(conn io.ReadWriteCloser) {
 	defer conn.Close()
@@ -39,26 +37,8 @@ func (s *Server) handle(conn io.ReadWriteCloser) {
 		return
 	}
 
-	writer := bytes.NewBuffer([]byte{})
-	he := s.handler(writer, r)
-	if he != nil {
-		response.WriteStatusLine(conn, he.StatusCode)
-		headers.Replace("Content-Length", fmt.Sprintf("%d", len(he.Msg)))
-		response.WriteHeaders(conn, headers)
-		conn.Write([]byte(he.Msg))
-		return
-	}
-
-
-	length := writer.Len()
-	headers.Replace("Content-Length", fmt.Sprintf("%d", length))
-
-	response.WriteStatusLine(conn, response.StatusOK)
-
-	response.WriteHeaders(conn, headers)
-
-	body := writer.Bytes()
-	conn.Write(body)
+	writer := response.NewWriter(conn)
+	s.handler(writer, r)
 }
 
 func (s *Server) listen() {
