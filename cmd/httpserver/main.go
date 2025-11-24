@@ -37,6 +37,9 @@ func handler(w *response.Writer, req *request.Request) {
 	case "/myproblem":
 		handle500(w, req)
 		return
+	case "/video":
+		handleVideo(w, req)
+		return
 	default:
 		body = "<html>\n" +
 			"  <head>\n" +
@@ -123,7 +126,92 @@ func handleProxy(w *response.Writer, req *request.Request) {
 	trailers := headers.NewHeaders()
 
 	hash := encoding.SHA256Sum(totalBodyBuf[:bodyLen])
-	trailers.Set("X-Content-SHA256", fmt.Sprintf("%x", hash))
+	hashStr := fmt.Sprintf("%x", hash)
+	trailers.Set("X-Content-SHA256", hashStr)
+	fmt.Println("hash: ", hashStr)
+	trailers.Set("X-Content-Length", fmt.Sprintf("%d", bodyLen))
+
+	err = w.WriteTrailers(trailers)
+	if err != nil {
+		fmt.Printf("got an error when writing trailers: %v\n", err)
+	}
+	
+}
+
+func handleVideo(w *response.Writer, req *request.Request) {
+	
+	
+	w.WriteStatusLine(response.StatusOK)
+	h := headers.NewHeaders()
+	h.Set("Content-Type", "video/mp4")
+	h.Set("Transfer-Encoding", "chunked")
+	h.Set("Connection", "close")
+	h.Set("Trailers", "X-Content-SHA256")
+	h.Set("Trailers", "X-Content-Length")
+	w.WriteHeaders(h)
+
+	fname := "assets/vim.mp4"
+
+	file, err := os.Open(fname)
+
+	if err != nil {
+		handle500(w, req)
+		return
+	}
+
+	defer file.Close()
+
+	bodyLen := 0
+	currentChunkSize := 0
+	const maxChunkSize = 1024
+	currentChunkBuf := make([]byte, maxChunkSize)
+	totalBodyBuf := make([]byte, 2048)
+
+	for {
+		currentChunkSize, err = file.Read(currentChunkBuf)
+
+		if err != nil && !errors.Is(err, io.EOF) {
+			fmt.Printf("Got an error reading the body, %v\n", err)
+			break
+		}
+
+		if currentChunkSize < 1 {
+			fmt.Printf("Got chunk size %d, and breaking the loop\n", currentChunkSize)
+			break
+		}
+
+		fmt.Println("Read", currentChunkSize, "bytes from response body")
+
+		_, err = w.WriteChunkedBody(currentChunkBuf[:currentChunkSize])
+
+		if err != nil {
+			fmt.Printf("Got an error writing chunked body %v\n", err)
+			break
+		}
+
+		if currentCapacity := len(totalBodyBuf); currentCapacity <= bodyLen + currentChunkSize {
+			neededSize := int(math.Pow(2, math.Ceil(math.Log2(float64(currentCapacity + currentChunkSize)))))
+			tem := make([]byte, neededSize)
+			copy(tem, totalBodyBuf)
+			copy(tem[bodyLen:], currentChunkBuf[:currentChunkSize])
+			totalBodyBuf = tem
+		} else {
+			copy(totalBodyBuf[bodyLen:], currentChunkBuf[:currentChunkSize])
+		}
+		bodyLen += currentChunkSize
+
+	}
+
+	_, err = w.WriteChunkedBodyDone()
+	if err != nil {
+		fmt.Printf("Got an error writing to done body, %v\n", err)
+	}
+	trailers := headers.NewHeaders()
+
+	hash := encoding.SHA256Sum(totalBodyBuf[:bodyLen])
+	hashStr := fmt.Sprintf("%x", hash)
+	trailers.Set("X-Content-SHA256", hashStr)
+	fmt.Println("hash: ", hashStr)
 	trailers.Set("X-Content-Length", fmt.Sprintf("%d", bodyLen))
 
 	err = w.WriteTrailers(trailers)
