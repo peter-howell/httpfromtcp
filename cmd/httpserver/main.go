@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
+	"github.com/peter-howell/httpfromtcp/internal/encoding"
 	"github.com/peter-howell/httpfromtcp/internal/headers"
 	"github.com/peter-howell/httpfromtcp/internal/request"
 	"github.com/peter-howell/httpfromtcp/internal/response"
@@ -22,7 +24,7 @@ import (
 func handler(w *response.Writer, req *request.Request) {
 	target := req.RequestLine.RequestTarget
 	if strings.HasPrefix(target, "/httpbin/") {
-		handleChunked(w, req)
+		handleProxy(w, req)
 		return
 	}
 	var body = ""
@@ -56,7 +58,7 @@ func handler(w *response.Writer, req *request.Request) {
 	w.WriteBody([]byte(body))
 }
 
-func handleChunked(w *response.Writer, req *request.Request) {
+func handleProxy(w *response.Writer, req *request.Request) {
 	url := fmt.Sprintf("https://httpbin.org/%s", strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin/"))
 
 	resp, err := http.Get(url)
@@ -70,34 +72,65 @@ func handleChunked(w *response.Writer, req *request.Request) {
 	h.Set("Content-Type", "text/plain")
 	h.Set("Transfer-Encoding", "chunked")
 	h.Set("Connection", "close")
+	h.Set("Trailers", "X-Content-SHA256")
+	h.Set("Trailers", "X-Content-Length")
 	w.WriteHeaders(h)
 
-	buf := make([]byte, 1024)
+	bodyLen := 0
+	currentChunkSize := 0
+	const maxChunkSize = 1024
+	currentChunkBuf := make([]byte, maxChunkSize)
+	totalBodyBuf := make([]byte, 2048)
 
 	for {
-		n, err := resp.Body.Read(buf)
-
-		if n <= 0 {
-			break
-		}
+		currentChunkSize, err = resp.Body.Read(currentChunkBuf)
 
 		if err != nil && !errors.Is(err, io.EOF) {
 			fmt.Printf("Got an error reading the body, %v\n", err)
 			break
 		}
 
-		_, err = w.WriteChunkedBody(buf[:n])
+		if currentChunkSize < 1 {
+			break
+		}
+
+		fmt.Println("Read", currentChunkSize, "bytes from response body")
+
+		_, err = w.WriteChunkedBody(currentChunkBuf[:currentChunkSize])
 
 		if err != nil {
 			fmt.Printf("Got an error writing chunked body %v\n", err)
 			break
 		}
+
+		if currentCapacity := len(totalBodyBuf); currentCapacity <= bodyLen + currentChunkSize {
+			neededSize := int(math.Pow(2, math.Ceil(math.Log2(float64(currentCapacity + currentChunkSize)))))
+			tem := make([]byte, neededSize)
+			copy(tem, totalBodyBuf)
+			copy(tem[bodyLen:], currentChunkBuf[:currentChunkSize])
+			totalBodyBuf = tem
+		} else {
+			copy(totalBodyBuf[bodyLen:], currentChunkBuf[:currentChunkSize])
+		}
+		bodyLen += currentChunkSize
+
 	}
 
 	_, err = w.WriteChunkedBodyDone()
 	if err != nil {
 		fmt.Printf("Got an error writing to done body, %v\n", err)
 	}
+	trailers := headers.NewHeaders()
+
+	hash := encoding.SHA256Sum(totalBodyBuf[:bodyLen])
+	trailers.Set("X-Content-SHA256", fmt.Sprintf("%x", hash))
+	trailers.Set("X-Content-Length", fmt.Sprintf("%d", bodyLen))
+
+	err = w.WriteTrailers(trailers)
+	if err != nil {
+		fmt.Printf("got an error when writing trailers: %v\n", err)
+	}
+	
 }
 
 func handle500(w *response.Writer, _req *request.Request) {

@@ -14,6 +14,7 @@ const (
 	wStateStatusLine writerState = iota
 	wStateHeaders
 	wStateBody
+	wStateTrailers
 )
 
 type Writer struct {
@@ -63,8 +64,8 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	return h
 }
 
-func WriteHeaders(w io.Writer, headers headers.Headers) error {
-	err := headers.Write(w)
+func WriteHeaders(w io.Writer, h headers.Headers) error {
+	err := h.Write(w)
 	if err != nil {
 		return err
 	}
@@ -91,12 +92,12 @@ func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	return err
 }
 
-func (w *Writer) WriteHeaders(headers headers.Headers) error {
+func (w *Writer) WriteHeaders(h headers.Headers) error {
 	if w.wState != wStateHeaders {
 		return fmt.Errorf("headers aren't needed based on current state")
 	}
 	defer func() {w.wState = wStateBody}()
-	return WriteHeaders(w.writer, headers)
+	return WriteHeaders(w.writer, h)
 }
 
 func (w *Writer) WriteBody(p []byte) (int, error) {
@@ -133,6 +134,13 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 }
 
 func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	return w.writer.Write([]byte("0\r\n\r\n"))
+	defer func() {w.wState = wStateTrailers}()
+	return w.writer.Write([]byte("0\r\n"))
 }
 
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	if w.wState != wStateTrailers {
+		return fmt.Errorf("can't write trailers if state is %v", w.wState)
+	}
+	return h.Write(w.writer)
+}
