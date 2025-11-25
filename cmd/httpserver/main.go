@@ -13,7 +13,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/peter-howell/gosha256"
+	"github.com/peter-howell/gosha256/sha256"
 	"github.com/peter-howell/httpfromtcp/internal/headers"
 	"github.com/peter-howell/httpfromtcp/internal/request"
 	"github.com/peter-howell/httpfromtcp/internal/response"
@@ -84,6 +84,7 @@ func handleProxy(w *response.Writer, req *request.Request) {
 	const maxChunkSize = 1024
 	currentChunkBuf := make([]byte, maxChunkSize)
 	totalBodyBuf := make([]byte, 2048)
+	hasher := sha256.NewHasher()
 
 	for {
 		currentChunkSize, err = resp.Body.Read(currentChunkBuf)
@@ -98,6 +99,7 @@ func handleProxy(w *response.Writer, req *request.Request) {
 		}
 
 		fmt.Println("Read", currentChunkSize, "bytes from response body")
+		_, _ = hasher.Write(currentChunkBuf[:currentChunkSize])
 
 		_, err = w.WriteChunkedBody(currentChunkBuf[:currentChunkSize])
 
@@ -125,7 +127,7 @@ func handleProxy(w *response.Writer, req *request.Request) {
 	}
 	trailers := headers.NewHeaders()
 
-	hash := gosha256.SHA256Sum(totalBodyBuf[:bodyLen])
+	hash := hasher.Sum()
 	hashStr := fmt.Sprintf("%x", hash)
 	trailers.Set("X-Content-SHA256", hashStr)
 	fmt.Println("hash: ", hashStr)
@@ -161,6 +163,7 @@ func handleVideo(w *response.Writer, req *request.Request) {
 
 	defer file.Close()
 
+	hasher := sha256.NewHasher()
 	bodyLen := 0
 	currentChunkSize := 0
 	const maxChunkSize = 1024
@@ -181,6 +184,8 @@ func handleVideo(w *response.Writer, req *request.Request) {
 		}
 
 		fmt.Println("Read", currentChunkSize, "bytes from response body")
+
+		hasher.Write(currentChunkBuf[:currentChunkSize])
 
 		_, err = w.WriteChunkedBody(currentChunkBuf[:currentChunkSize])
 
@@ -208,7 +213,7 @@ func handleVideo(w *response.Writer, req *request.Request) {
 	}
 	trailers := headers.NewHeaders()
 
-	hash := gosha256.SHA256Sum(totalBodyBuf[:bodyLen])
+	hash := hasher.Sum()
 	hashStr := fmt.Sprintf("%x", hash)
 	trailers.Set("X-Content-SHA256", hashStr)
 	fmt.Println("hash: ", hashStr)
