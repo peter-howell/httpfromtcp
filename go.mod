@@ -2,7 +2,10 @@ module github.com/peter-howell/httpfromtcp
 
 go 1.25.3
 
-require github.com/stretchr/testify v1.11.1
+require (
+	github.com/peter-howell/gosha256 v0.0.0-20251125132901-b236142b6660
+	github.com/stretchr/testify v1.11.1
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

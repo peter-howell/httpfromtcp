@@ -13,7 +13,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/peter-howell/httpfromtcp/internal/encoding"
+	"github.com/peter-howell/gosha256"
 	"github.com/peter-howell/httpfromtcp/internal/headers"
 	"github.com/peter-howell/httpfromtcp/internal/request"
 	"github.com/peter-howell/httpfromtcp/internal/response"
@@ -125,7 +125,7 @@ func handleProxy(w *response.Writer, req *request.Request) {
 	}
 	trailers := headers.NewHeaders()
 
-	hash := encoding.SHA256Sum(totalBodyBuf[:bodyLen])
+	hash := gosha256.SHA256Sum(totalBodyBuf[:bodyLen])
 	hashStr := fmt.Sprintf("%x", hash)
 	trailers.Set("X-Content-SHA256", hashStr)
 	fmt.Println("hash: ", hashStr)
@@ -208,7 +208,7 @@ func handleVideo(w *response.Writer, req *request.Request) {
 	}
 	trailers := headers.NewHeaders()
 
-	hash := encoding.SHA256Sum(totalBodyBuf[:bodyLen])
+	hash := gosha256.SHA256Sum(totalBodyBuf[:bodyLen])
 	hashStr := fmt.Sprintf("%x", hash)
 	trailers.Set("X-Content-SHA256", hashStr)
 	fmt.Println("hash: ", hashStr)
