@@ -66,13 +66,20 @@ func handleProxy(w *response.Writer, req *request.Request) {
 
 	resp, err := http.Get(url)
 	if err != nil {
+		fmt.Printf("got an error, %v\n", err)
 		handle500(w, req)
 		return
 	}
 	
 	w.WriteStatusLine(response.StatusOK)
+
 	h := headers.NewHeaders()
-	h.Set("Content-Type", "text/plain")
+	contentType := "text/plain"
+	if x := resp.Header.Get("Content-Type"); x != "" {
+		contentType = x
+	}
+
+	h.Set("Content-Type", contentType)
 	h.Set("Transfer-Encoding", "chunked")
 	h.Set("Connection", "close")
 	h.Set("Trailers", "X-Content-SHA256")
@@ -88,6 +95,7 @@ func handleProxy(w *response.Writer, req *request.Request) {
 
 	for {
 		currentChunkSize, err = resp.Body.Read(currentChunkBuf)
+		fmt.Printf("Read %d bytes of data\n", currentChunkSize)
 
 		if err != nil && !errors.Is(err, io.EOF) {
 			fmt.Printf("Got an error reading the body, %v\n", err)
@@ -97,9 +105,7 @@ func handleProxy(w *response.Writer, req *request.Request) {
 		if currentChunkSize < 1 {
 			break
 		}
-
-		fmt.Println("Read", currentChunkSize, "bytes from response body")
-		_, _ = hasher.Write(currentChunkBuf[:currentChunkSize])
+		hasher.Write(currentChunkBuf[:currentChunkSize])
 
 		_, err = w.WriteChunkedBody(currentChunkBuf[:currentChunkSize])
 
@@ -129,8 +135,8 @@ func handleProxy(w *response.Writer, req *request.Request) {
 
 	hash := hasher.Sum()
 	hashStr := fmt.Sprintf("%x", hash)
+	fmt.Printf("hash: %s\n", hashStr)
 	trailers.Set("X-Content-SHA256", hashStr)
-	fmt.Println("hash: ", hashStr)
 	trailers.Set("X-Content-Length", fmt.Sprintf("%d", bodyLen))
 
 	err = w.WriteTrailers(trailers)
@@ -172,6 +178,7 @@ func handleVideo(w *response.Writer, req *request.Request) {
 
 	for {
 		currentChunkSize, err = file.Read(currentChunkBuf)
+		fmt.Printf("Read %d bytes of data\n", currentChunkSize)
 
 		if err != nil && !errors.Is(err, io.EOF) {
 			fmt.Printf("Got an error reading the body, %v\n", err)
@@ -182,8 +189,6 @@ func handleVideo(w *response.Writer, req *request.Request) {
 			fmt.Printf("Got chunk size %d, and breaking the loop\n", currentChunkSize)
 			break
 		}
-
-		fmt.Println("Read", currentChunkSize, "bytes from response body")
 
 		hasher.Write(currentChunkBuf[:currentChunkSize])
 
@@ -215,8 +220,8 @@ func handleVideo(w *response.Writer, req *request.Request) {
 
 	hash := hasher.Sum()
 	hashStr := fmt.Sprintf("%x", hash)
+	fmt.Printf("hash: %s\n", hashStr)
 	trailers.Set("X-Content-SHA256", hashStr)
-	fmt.Println("hash: ", hashStr)
 	trailers.Set("X-Content-Length", fmt.Sprintf("%d", bodyLen))
 
 	err = w.WriteTrailers(trailers)
@@ -226,7 +231,7 @@ func handleVideo(w *response.Writer, req *request.Request) {
 	
 }
 
-func handle500(w *response.Writer, _req *request.Request) {
+func handle500(w *response.Writer, _ *request.Request) {
 
 	code := response.StatusInternalServerError
 	body := "<html>\n" +
@@ -249,7 +254,7 @@ func handle500(w *response.Writer, _req *request.Request) {
 	w.WriteBody([]byte(body))
 }
 
-func handle400(w *response.Writer, _req *request.Request) {
+func handle400(w *response.Writer, _ *request.Request) {
 
 	code := response.StatusBadRequest
 	body := "<html>\n" +
