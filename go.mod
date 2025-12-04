@@ -3,7 +3,7 @@ module github.com/peter-howell/httpfromtcp
 go 1.25.3
 
 require (
-	github.com/peter-howell/gosha256 v0.1.0
+	github.com/peter-howell/gosha256 v0.0.1
 	github.com/stretchr/testify v1.11.1
 )
 
